@@ -46,7 +46,8 @@ const zBody = z.object({
     .string()
     .min(4, 'Password must be at least 4 characters long')
     .max(128),
-  invite: z.string().optional()
+  invite: z.string().optional(),
+  register: z.boolean().optional()
 });
 
 const loginRateLimiter = createRateLimiter({
@@ -150,16 +151,21 @@ const loginRouteHandler = async (
 
   if (!allowed) return;
 
+  if (data.register && existingUser) {
+    throw new HttpValidationError('identity', 'Identity is already taken');
+  }
+
   if (!existingUser) {
     let inviteRoleId: number | null = null;
 
     const result = await isInviteValid(data.invite);
 
-    if (!settings.allowNewUsers && result.error) {
+    // signing in never creates an account, so a mistyped identity can't silently register one
+    if (!data.register || (!settings.allowNewUsers && result.error)) {
       await Bun.password.verify('dummy', await getDummyArgon2Hash());
 
       logger.info(
-        `${chalk.dim('[Auth]')} Login attempt for unknown identity blocked. (reason: ${result.error}, IP: ${connectionInfo?.ip || 'unknown'})`
+        `${chalk.dim('[Auth]')} Login attempt for unknown identity blocked. (reason: ${data.register ? result.error : 'not registering'}, IP: ${connectionInfo?.ip || 'unknown'})`
       );
 
       throw invalidCredentialsError(lockoutKey);
@@ -170,7 +176,7 @@ const loginRouteHandler = async (
 
     inviteRoleId = result.invite?.roleId ?? null;
 
-    // user doesn't exist, but registration is open OR invite was valid - create the user automatically
+    // registering, and registration is open OR invite was valid - create the user
     const registeredUserId = await createUser({
       identity: data.identity,
       hashedPassword: (await Bun.password.hash(data.password)).toString(),

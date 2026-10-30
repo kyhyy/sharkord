@@ -72,7 +72,8 @@ const login = async (
   identity: string,
   password: string,
   invite?: string,
-  headers?: Record<string, string>
+  headers?: Record<string, string>,
+  register?: boolean
 ) =>
   fetch(`${testsBaseUrl}/login`, {
     method: 'POST',
@@ -83,9 +84,13 @@ const login = async (
     body: JSON.stringify({
       identity,
       password,
-      invite
+      invite,
+      register
     })
   });
+
+const register = async (identity: string, password: string, invite?: string) =>
+  login(identity, password, invite, undefined, true);
 
 type TCaller = Awaited<ReturnType<typeof getCaller>>['caller'];
 type TSendMessageInput = Parameters<TCaller['messages']['send']>[0];
@@ -120,6 +125,7 @@ export {
   getMockedToken,
   initTest,
   login,
+  register,
   sendMessage,
   uploadFile,
   type TFakeSocket

@@ -2,7 +2,7 @@ import { ChannelType, sha256 } from '@sharkord/shared';
 import { describe, expect, spyOn, test } from 'bun:test';
 import { and, eq, inArray } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
-import { login } from '../../__tests__/helpers';
+import { login, register } from '../../__tests__/helpers';
 import { TEST_SECRET_TOKEN } from '../../__tests__/seed';
 import { tdb, testsBaseUrl } from '../../__tests__/setup';
 import { config } from '../../config';
@@ -80,7 +80,7 @@ describe('/login', () => {
   test('should return the same generic error for an unknown identity when registration is closed', async () => {
     await tdb.update(settings).set({ allowNewUsers: false });
 
-    const response = await login('definitelynotaregistereduser', 'whatever');
+    const response = await register('definitelynotaregistereduser', 'whatever');
 
     expect(response.status).toBe(400);
 
@@ -90,8 +90,36 @@ describe('/login', () => {
     expect(data.errors).toHaveProperty('identity', 'Invalid credentials');
   });
 
-  test('should auto-register new user when allowNewUsers is true', async () => {
-    const response = await login('newuser', 'newpassword123');
+  test('should not register an unknown identity when signing in', async () => {
+    const response = await login('typoidentity', 'password123');
+
+    expect(response.status).toBe(400);
+
+    const data: any = await response.json();
+
+    expect(data.errors).toHaveProperty('identity', 'Invalid credentials');
+
+    const user = await tdb
+      .select()
+      .from(users)
+      .where(eq(users.identity, 'typoidentity'))
+      .get();
+
+    expect(user).toBeUndefined();
+  });
+
+  test('should reject registering an identity that is already taken', async () => {
+    const response = await register('testowner', 'otherpassword');
+
+    expect(response.status).toBe(400);
+
+    const data: any = await response.json();
+
+    expect(data.errors).toHaveProperty('identity', 'Identity is already taken');
+  });
+
+  test('should register a new user when allowNewUsers is true', async () => {
+    const response = await register('newuser', 'newpassword123');
 
     expect(response.status).toBe(200);
 
@@ -111,7 +139,7 @@ describe('/login', () => {
   });
 
   test('should mark all existing messages as read for first-time users', async () => {
-    const response = await login('readstateuser', 'password123');
+    const response = await register('readstateuser', 'password123');
 
     expect(response.status).toBe(200);
 
@@ -138,7 +166,7 @@ describe('/login', () => {
   });
 
   test('should only count new messages as unread after first-time login', async () => {
-    const response = await login('readstateuser2', 'password123');
+    const response = await register('readstateuser2', 'password123');
 
     expect(response.status).toBe(200);
 
@@ -186,7 +214,7 @@ describe('/login', () => {
       createdAt: Date.now() + 1
     });
 
-    const response = await login('threadbackfilluser', 'password123');
+    const response = await register('threadbackfilluser', 'password123');
 
     expect(response.status).toBe(200);
 
@@ -225,7 +253,7 @@ describe('/login', () => {
       })
       .returning();
 
-    const response = await login('emptychanneluser', 'password123');
+    const response = await register('emptychanneluser', 'password123');
 
     expect(response.status).toBe(200);
 
@@ -252,7 +280,7 @@ describe('/login', () => {
   test('should fail when allowNewUsers is false and no invite provided', async () => {
     await tdb.update(settings).set({ allowNewUsers: false });
 
-    const response = await login('anothernewuser', 'password123');
+    const response = await register('anothernewuser', 'password123');
 
     expect(response.status).toBe(400);
 
@@ -274,7 +302,11 @@ describe('/login', () => {
       createdAt: Date.now()
     });
 
-    const response = await login('inviteuser', 'password123', 'TESTINVITE123');
+    const response = await register(
+      'inviteuser',
+      'password123',
+      'TESTINVITE123'
+    );
 
     expect(response.status).toBe(200);
 
@@ -311,7 +343,7 @@ describe('/login', () => {
       }
     );
 
-    const response = await login(
+    const response = await register(
       'announceduser',
       'password123',
       'ANNOUNCEDINVITE'
@@ -344,8 +376,8 @@ describe('/login', () => {
     });
 
     const responses = await Promise.all([
-      login('raceuser1', 'password123', 'RACEINVITE'),
-      login('raceuser2', 'password123', 'RACEINVITE')
+      register('raceuser1', 'password123', 'RACEINVITE'),
+      register('raceuser2', 'password123', 'RACEINVITE')
     ]);
 
     const statuses = responses.map((response) => response.status).sort();
@@ -383,8 +415,8 @@ describe('/login', () => {
     // both requests pass the "identity does not exist" check, so the second
     // one fails on the unique identity index inside the transaction
     const responses = await Promise.all([
-      login('sameidentity', 'password123', 'ROLLBACKINVITE'),
-      login('sameidentity', 'password123', 'ROLLBACKINVITE')
+      register('sameidentity', 'password123', 'ROLLBACKINVITE'),
+      register('sameidentity', 'password123', 'ROLLBACKINVITE')
     ]);
 
     const okCount = responses.filter((r) => r.status === 200).length;
@@ -418,7 +450,7 @@ describe('/login', () => {
       createdAt: Date.now() - 86400000
     });
 
-    const response = await login(
+    const response = await register(
       'expiredinviteuser',
       'password123',
       'EXPIREDINVITE'
@@ -445,7 +477,7 @@ describe('/login', () => {
       createdAt: Date.now()
     });
 
-    const response = await login(
+    const response = await register(
       'maxedinviteuser',
       'password123',
       'MAXEDINVITE'
@@ -462,7 +494,7 @@ describe('/login', () => {
   test('should fail with non-existent invite', async () => {
     await tdb.update(settings).set({ allowNewUsers: false });
 
-    const response = await login(
+    const response = await register(
       'fakeinviteuser',
       'password123',
       'FAKEINVITECODE'
@@ -694,7 +726,7 @@ describe('/login', () => {
   });
 
   test('should assign default role to newly registered user', async () => {
-    const response = await login('roleuser', 'password123');
+    const response = await register('roleuser', 'password123');
 
     expect(response.status).toBe(200);
 

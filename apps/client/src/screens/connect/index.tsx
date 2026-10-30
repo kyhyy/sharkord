@@ -48,6 +48,7 @@ const Connect = memo(() => {
   });
 
   const [loading, setLoading] = useState(false);
+  const [register, setRegister] = useState(false);
   const info = useInfo();
 
   const identityError = useMemo(() => {
@@ -56,6 +57,8 @@ const Connect = memo(() => {
         return t('tooManyAttempts');
       case 'Invalid credentials':
         return t('invalidCredentials');
+      case 'Identity is already taken':
+        return t('identityTaken');
       default:
         return errors.identity;
     }
@@ -98,7 +101,8 @@ const Connect = memo(() => {
         body: JSON.stringify({
           identity: values.identity,
           password: values.password,
-          invite: inviteCode
+          invite: inviteCode,
+          register
         })
       });
 
@@ -132,9 +136,15 @@ const Connect = memo(() => {
     values.password,
     setErrors,
     inviteCode,
+    register,
     startSession,
     t
   ]);
+
+  const onRegisterToggle = useCallback(() => {
+    setRegister((prev) => !prev);
+    setErrors({});
+  }, [setErrors]);
 
   const onFormSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -218,7 +228,7 @@ const Connect = memo(() => {
                 <Input
                   {...r('password')}
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete={register ? 'new-password' : 'current-password'}
                   onEnter={onConnectClick}
                   data-testid={TestId.CONNECT_PASSWORD_INPUT}
                 />
@@ -253,9 +263,20 @@ const Connect = memo(() => {
                 disabled={loading || !values.identity || !values.password}
                 data-testid={TestId.CONNECT_BUTTON}
               >
-                {t('connectBtn')}
+                {register ? t('registerBtn') : t('connectBtn')}
               </Button>
             )}
+
+            {oidc.isLocalLoginAllowed &&
+              (info?.allowNewUsers || inviteCode) && (
+                <Button
+                  className="w-full"
+                  variant="link"
+                  onClick={onRegisterToggle}
+                >
+                  {register ? t('haveAccount') : t('noAccount')}
+                </Button>
+              )}
 
             {oidc.isEnabled && (
               <Button
